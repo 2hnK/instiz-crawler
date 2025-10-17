@@ -1,0 +1,28 @@
+{
+  "list_item_link": [
+    "td.t_left > a",
+    "a[href*='/name?no=']"
+  ],
+  "post_title": [
+    "meta[property='og:title']",
+    "h3",
+    "h2",
+    "title"
+  ],
+  "post_body": [
+    "div.memo_content",
+    "div#memo_content",
+    "div.board_body",
+    "article"
+  ],
+  "comments": {
+    "item": "table[node='_44'] tr",
+    "content": "td",
+    "time": "span.time"
+  },
+  "comment_pager": {
+    "anchors": "td[node='_45'] a, td[node='_127'] a, table#indextable td[class^='indexing'] a[href^=\"javascript:ajax\"]",
+    "js_pattern": "javascript:ajax\\s*c?\\s*\\(\\s*'(?P<board>[^']+)'\\s*,\\s*(?P<id>\\d+)\\s*,\\s*(?P<page>\\d+)",
+    "url_template": "{base}/bbs/view_comment.php?id={board}&no={id}&cmt={cmt}&xp={page}&xb=1"
+  }
+}

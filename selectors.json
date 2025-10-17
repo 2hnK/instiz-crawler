@@ -1,0 +1,34 @@
+{
+  "post_body": ["#memo_content_1", "[id^='memo_content']"],
+  "post_body_strict": ["#memo_content_1 p", "[id^='memo_content'] p"],
+  "post_body_exclude": [
+    "a[href^='javascript:']",
+    "#indextable",
+    "[class*='indexing']",
+    ".paging",
+    ".tool",
+    ".meta",
+    ".copyright",
+    ".sns",
+    ".view_app",
+    ".tag"
+  ],
+  "post_images": ["#memo_content_1 img", "[id^='memo_content'] img", "img#img2"],
+
+  "comments": {
+    "item": "div.comment_line",
+    "author": "span[id^='n']",
+    "content": ".cmt_sb, div.comment_line",
+    "time": "span.minitext"
+  },
+
+  "comment_pager": {
+    "anchors": "#indextable td a[href^=\"javascript:ajax\"]",
+    "js_pattern": "javascript:ajax\\s*c?\\s*\\(\\s*'(?P<board>[^']+)'\\s*,\\s*(?P<id>\\d+)\\s*,\\s*(?P<page>\\d+)",
+    "url_template": "{base}/bbs/view_comment.php?id={board}&no={id}&cmt={cmt}&xp={page}&xb=1"
+  },
+
+  "list_item_link": [
+    "tr[id^='list'] > td > a"
+  ]
+}
