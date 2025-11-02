@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 
 log = logging.getLogger(__name__)
@@ -57,38 +57,155 @@ def extract_list_items(
     selectors: Optional[Dict] = None,
     board_path: str = "name",
 ) -> List[Dict]:
-    items: List[Dict] = []
-    tried = False
-    if selectors and "list_item_link" in selectors:
-        tried = True
-        sel = selectors["list_item_link"]
-        # 리스트 범위 한정: list_scope 제공 시 그 안에서만 탐색
-        scopes: List[BeautifulSoup] = []
-        if selectors.get("list_scope"):
-            sc = soup.select(selectors["list_scope"])
-            scopes = [node for node in sc]
-        if not scopes:
-            scopes = [soup]
+    def looks_like_comment_count(text: str) -> bool:
+        if not text:
+            return False
+        t = text.strip()
+        if not t:
+            return False
+        if "댓" in t or "댓글" in t:
+            return True
+        return bool(re.match(r"^\s*[\[(]?\s*\d+\s*[\])]?$", t))
 
-        link_css = [sel] if isinstance(sel, str) else list(sel)
-        for root in scopes:
-            # 제외 범위 제거(exclude_scopes)
-            if selectors.get("exclude_scopes"):
-                for ex in (selectors.get("exclude_scopes") or []):
+    def find_comment_node(anchor) -> Optional[BeautifulSoup]:
+        node = None
+        if selectors and selectors.get("list_comment_count"):
+            css_list = selectors.get("list_comment_count")
+            css_iter = [css_list] if isinstance(css_list, str) else list(css_list)
+            for css in css_iter:
+                try:
+                    cand = anchor.select_one(css)
+                except Exception:
+                    cand = None
+                if cand:
+                    node = cand
+                    break
+        if node is None:
+            for span in anchor.select("span"):
+                try:
+                    txt = span.get_text(" ", strip=True)
+                except Exception:
+                    txt = ""
+                if looks_like_comment_count(txt):
+                    node = span
+                    break
+        return node
+
+    def extract_comment_count(anchor) -> Tuple[Optional[int], Optional[BeautifulSoup]]:
+        node = find_comment_node(anchor)
+        if node is None:
+            return None, None
+        try:
+            raw = node.get_text(" ", strip=True)
+        except Exception:
+            raw = ""
+        if not raw:
+            return None, node
+        m = re.search(r"(\d{1,7})", raw.replace(",", ""))
+        if not m:
+            return None, node
+        try:
+            return int(m.group(1)), node
+        except Exception:
+            return None, node
+
+    def clean_anchor_title(anchor, comment_node) -> str:
+        comment_text = ""
+        if comment_node:
+            try:
+                comment_text = comment_node.get_text(" ", strip=True) or ""
+            except Exception:
+                comment_text = ""
+        parts: List[str] = []
+        for child in anchor.children:
+            if comment_node and child is comment_node:
+                continue
+            if isinstance(child, NavigableString):
+                txt = str(child).strip()
+            else:
+                try:
+                    txt = child.get_text(" ", strip=True)
+                except Exception:
+                    txt = ""
+            if comment_text and txt:
+                txt = txt.replace(comment_text, " ").strip()
+            if txt:
+                parts.append(txt)
+        title = " ".join(parts).strip()
+        if not title:
+            title = anchor.get_text(" ", strip=True)
+            if comment_text:
+                title = title.replace(comment_text, " ").strip()
+        return title
+
+    def build_item(anchor) -> Optional[Dict]:
+        href = anchor.get("href")
+        if not href:
+            return None
+        href_lower = href.lower()
+        if href_lower.startswith("javascript:") or href_lower.startswith("#") or href_lower.startswith("mailto:"):
+            return None
+        comments_count, comment_node = extract_comment_count(anchor)
+        title = clean_anchor_title(anchor, comment_node)
+        if not title:
+            return None
+        item = {"url": href, "title": title}
+        if comments_count is not None:
+            item["comments_count"] = comments_count
+        return item
+
+    def prepare_scope(root) -> BeautifulSoup:
+        if selectors and selectors.get("exclude_scopes"):
+            excludes = selectors.get("exclude_scopes")
+            ex_iter = [excludes] if isinstance(excludes, str) else list(excludes)
+            for ex in ex_iter:
+                try:
                     for bad in root.select(ex):
                         try:
                             bad.extract()
                         except Exception:
                             pass
+                except Exception:
+                    continue
+        return root
+
+    def resolve_scopes() -> List[BeautifulSoup]:
+        nodes: List[BeautifulSoup] = []
+        if selectors and selectors.get("list_scope"):
+            scope_sel = selectors.get("list_scope")
+            css_iter = [scope_sel] if isinstance(scope_sel, str) else list(scope_sel)
+            for css in css_iter:
+                try:
+                    nodes.extend(soup.select(css))
+                except Exception:
+                    continue
+        if not nodes:
+            nodes = [soup]
+        prepared: List[BeautifulSoup] = []
+        seen_ids = set()
+        for node in nodes:
+            if node is None:
+                continue
+            ident = id(node)
+            if ident in seen_ids:
+                continue
+            seen_ids.add(ident)
+            prepared.append(prepare_scope(node))
+        return prepared
+
+    items: List[Dict] = []
+    tried = False
+    scopes = resolve_scopes()
+    if selectors and "list_item_link" in selectors:
+        tried = True
+        sel = selectors["list_item_link"]
+        link_css = [sel] if isinstance(sel, str) else list(sel)
+        for root in scopes:
             for css in link_css:
                 for a in root.select(css):
-                    href = a.get("href")
-                    if not href:
-                        continue
-                    url = href
-                    title = a.get_text(strip=True)
-                    if title:
-                        items.append({"url": url, "title": title})
+                    item = build_item(a)
+                    if item:
+                        items.append(item)
         if items:
             return dedupe_items(items)
 
@@ -97,12 +214,13 @@ def extract_list_items(
     # - path style:       /{board}/123456
     pattern_q = re.compile(rf'/{re.escape(board_path)}[^\s"\']*(?:[?&](?:no|id|article|artno)=\d+)', re.I)
     pattern_p = re.compile(rf'/{re.escape(board_path)}/(\d+)(?:[^\d]|$)')
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if pattern_q.search(href) or pattern_p.search(href):
-            title = a.get_text(strip=True)
-            if title:
-                items.append({"url": href, "title": title})
+    for root in scopes:
+        for a in root.find_all("a", href=True):
+            href = a["href"]
+            if pattern_q.search(href) or pattern_p.search(href):
+                item = build_item(a)
+                if item:
+                    items.append(item)
 
     return dedupe_items(items)
 

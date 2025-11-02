@@ -1,3 +1,4 @@
+import csv
 from datetime import date
 
 from instiz_crawler.crawler import InstizCrawler, CrawlConfig
@@ -9,8 +10,22 @@ LIST_HTML = """
     <a href="/name?page=1&category=1">1</a>
     <a href="/name?page=3&category=1">3</a>
     <table>
-      <tr><td class="t_left"><a href="/name?no=111">제목 A</a></td></tr>
-      <tr><td class="t_left"><a href="/name?no=222">제목 B</a></td></tr>
+      <tr>
+        <td class="t_left">
+          <a href="/name?no=111">
+            <div class="meta"><span class="reply">[3]</span></div>
+            <span class="title">제목 A</span>
+          </a>
+        </td>
+      </tr>
+      <tr>
+        <td class="t_left">
+          <a href="/name?no=222">
+            <div class="meta"><span class="reply">[5]</span></div>
+            <span class="title">제목 B</span>
+          </a>
+        </td>
+      </tr>
     </table>
   </body>
  </html>
@@ -71,13 +86,15 @@ def test_integration_csv_outputs(tmp_path):
 
     c.run_month(date(2024, 1, 1), date(2024, 2, 1))
 
-    posts = tmp_path / "instiz_2024-01_posts.csv"
-    comments = tmp_path / "instiz_2024-01_comments.csv"
-
-    assert posts.exists() and comments.exists()
-    # 간단 내용 확인
-    text_posts = posts.read_text("utf-8")
-    text_comments = comments.read_text("utf-8")
-    assert "제목 A" in text_posts and "제목 B" in text_posts
-    assert "댓글1" in text_comments and "댓글3" in text_comments
-
+    csv_path = tmp_path / "instiz_2024-01.csv"
+    assert csv_path.exists()
+    with csv_path.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    titles = {row["title"]: row for row in rows}
+    assert "제목 A" in titles and "제목 B" in titles
+    # 댓글 수는 목록에서 제공된 값으로 기입된다.
+    assert titles["제목 A"]["comments_count"] == "3"
+    assert titles["제목 B"]["comments_count"] == "5"
+    # (변경) CSV 메타 컬럼 축소: timerange 컬럼 제거됨
+    assert "timerange" not in rows[0]

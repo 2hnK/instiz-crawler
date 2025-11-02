@@ -63,6 +63,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--timeout", type=int, default=15, help="요청 타임아웃(초)")
     p.add_argument("--max-retries", type=int, default=3, help="최대 재시도 횟수")
 
+    # 빈 페이지 백트랙 설정
+    p.add_argument("--empty-page-backtrack-limit", type=int, default=3,
+                   help="빈 목록 페이지일 때 역방향 대체 탐색 시도 횟수 (기본 3회)")
+    p.add_argument("--empty-page-backtrack-step", type=int, default=10,
+                   help="역탐색 간격(페이지 단위). 예: 10이면 p-10, p-20, ... (기본 10)")
+
     p.add_argument("--selectors", help="선택자 설정 JSON 경로", default="selectors.json")
     p.add_argument("--verbose", action="store_true",default=True, help="자세한 로그 출력")
     p.add_argument("--dry-run", action="store_true", help="URL/계획만 출력(요청 최소화)")
@@ -146,6 +152,8 @@ def main():
         ascending=args.ascending if hasattr(args, "ascending") else True,
         enforce_search_params=args.enforce_search_filter if hasattr(args, "enforce_search_filter") else False,
         strict_url_encoding=args.strict_url_encoding if hasattr(args, "strict_url_encoding") else False,
+        empty_page_backtrack_limit=getattr(args, "empty_page_backtrack_limit", 3),
+        empty_page_backtrack_step=getattr(args, "empty_page_backtrack_step", 10),
     )
 
     # 쿠키 모드 검증: 사용자가 원하는 제공 방식을 명시적으로 선택 가능

@@ -1,6 +1,6 @@
 # 🕸️ Instiz Crawler
 
-**(월별 크롤링 · 동적 샘플링 / 연속 방문 지원)**
+**(월별 크롤링 · 동적 샘플링 / 빈 페이지 백트랙 보정 지원)**
 
 ---
 
@@ -53,7 +53,7 @@ pip install -r requirements.txt
 python -m instiz_crawler.cli \
   --cookie-string "name=value; name2=value2" \
   --start 2024-01-01 --end 2024-12-31 --month-step 1 \
-  --target-posts-per-month 10000 --posts-per-page 20 \
+  --target-posts-per-month 5000 --posts-per-page 20 \
   --output-dir data --output-format csv
 ```
 
@@ -63,13 +63,13 @@ python -m instiz_crawler.cli \
 python -m instiz_crawler.cli \
   --cookies-json cookies.json \
   --start 2024-01-01 --end 2024-12-31 --month-step 1 \
-  --target-posts-per-month 10000 --posts-per-page 20 \
+  --target-posts-per-month 5000 --posts-per-page 20 \
   --output-dir data --output-format csv
 ```
 
 ---
 
-## ⚙️ 주요 매개변수
+## ⚙️ 주요 매개변수 (CLI)
 
 | 옵션                                  | 설명                                  | 기본값                           |
 | ----------------------------------- | ----------------------------------- | ----------------------------- |
@@ -93,7 +93,9 @@ python -m instiz_crawler.cli \
 | `--timeout`                         | 요청 타임아웃(초)                          | -                             |
 | `--selectors`                       | 선택자 설정 JSON 파일 경로                   | -                             |
 | `--skip-existing`                   | 이미 존재하는 월별 파일 건너뜀                   | -                             |
-| `--dry-run`                         | 요청 없이 URL 계산만 수행                    | -                             |
+| `--dry-run`                         | 실제 수집 없이 계획만 출력([PLAN] 로그 표시)     | -                             |
+| `--empty-page-backtrack-limit`      | 빈 목록 페이지 시 역방향 대체 탐색 시도 횟수         | `3`                           |
+| `--empty-page-backtrack-step`       | 역탐색 간격(페이지). 예: 10이면 p-10, p-20…      | `10`                          |
 
 ---
 
@@ -111,12 +113,13 @@ python -m instiz_crawler.cli \
   `pages_needed = ceil(n / p)`
   `step = max(1, round(total_pages / pages_needed))`
 * 방문 순서: `1, 1+step, 1+2*step …`
+* 빈 목록 페이지(말단 삭제 등)일 경우 `p-10 → p-20 → p-30` 순으로 대체 페이지를 자동 시도합니다(조절 가능).
 
 ### 3️⃣ 게시글·댓글 파싱
 
-* 목록: 기간탐색 컨텍스트를 유지한 링크만 수집 (`--enforce-search-filter`)
-* 본문: `post_body_strict` → `post_body` 순으로 추출, 불필요한 요소(`post_body_exclude`) 제거
-* 댓글: ajax 기반 댓글 페이지(`javascript:ajax(...)`) 추적 및 추가 수집
+* 목록: HOT/배너/광고/중간 섹션 제외 후 유효 게시물만 추출(`selectors.json` 반영)
+* 본문: `post_body_strict` → `post_body` 순으로 추출, 불필요 요소(`post_body_exclude`) 제거
+* 댓글: 선택자 기반으로 가능한 범위 내 추출(비동기/페이징 댓글은 일부만 수집될 수 있음)
 
 ### 4️⃣ 세션 만료 감지
 
@@ -127,26 +130,17 @@ python -m instiz_crawler.cli \
 
 ## 💾 출력 형식
 
-### 게시글 (`data/instiz_YYYY-MM_posts.csv`)
+### 게시글 CSV (`data/instiz_YYYY-MM.csv`)
 
-| 컬럼               | 설명      |
-| ---------------- | ------- |
-| `id`             | 게시글 ID  |
-| `url`            | 게시글 URL |
-| `title`          | 제목      |
-| `body`           | 본문 텍스트  |
-| `created_at`     | 작성 시각   |
-| `likes`          | 좋아요 수   |
-| `comments_count` | 댓글 수    |
-
-### 댓글 (`data/instiz_YYYY-MM_comments.csv`)
-
-| 컬럼           | 설명     |
-| ------------ | ------ |
-| `post_id`    | 게시글 ID |
-| `index`      | 댓글 인덱스 |
-| `content`    | 댓글 내용  |
-| `created_at` | 작성 시각  |
+| 컬럼               | 설명        |
+| ---------------- | --------- |
+| `id`             | 게시글 ID    |
+| `url`            | 게시글 URL   |
+| `title`          | 제목        |
+| `body`           | 본문 텍스트    |
+| `created_at`     | 작성 시각     |
+| `likes`          | 좋아요 수     |
+| `comments_count` | 댓글 수      |
 
 ---
 
@@ -163,6 +157,9 @@ python -m instiz_crawler.cli \
 | `comments.item`         | 댓글 블록 선택자                              |
 | `comment_pager.anchors` | ajax 댓글 페이징                            |
 | `list_item_link`        | 목록 내 게시글 링크                            |
+| `list_scope`            | 유효 목록 범위(예: `#mboard list`)                 |
+| `exclude_scopes`        | HOT/배너/광고/중간 섹션 등 제외 범위             |
+| `list_comment_count`    | 목록에서 댓글 수를 나타내는 노드 선택자             |
 
 ---
 
@@ -213,7 +210,7 @@ pytest -q
 
 ## 🧭 실행 팁
 
-* 실행 전 `--dry-run --verbose` 옵션으로 월별 URL 및 페이지 계획을 점검하세요.
+* 실행 전 `--dry-run --verbose`로 [PLAN] 로그(시간대별/월별 `total_pages`, `pick`, `pages_preview`)를 점검하세요.
 * 1~2개월 범위에서 소규모 테스트 후 전체 기간 실행을 권장합니다.
 * `--skip-list-top-n`과 `--dynamic-sampling`을 함께 사용할 경우, `--posts-per-page`를 조정해야 실제 수집량이 일치합니다.
 
